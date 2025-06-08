@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# === Helper: Check if a command exists ===
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# === Detect package manager and install a package ===
+install_package() {
+    local pkg="$1"
+
+    if command_exists apt; then
+        sudo apt update && sudo apt install -y "$pkg"
+    elif command_exists dnf; then
+        sudo dnf install -y "$pkg"
+    elif command_exists pacman; then
+        sudo pacman -Sy --noconfirm "$pkg"
+    elif command_exists zypper; then
+        sudo zypper install -y "$pkg"
+    else
+        echo "Unsupported package manager. Please install $pkg manually."
+        exit 1
+    fi
+}
+
+# === Install Zenity if missing ===
+if ! command_exists zenity; then
+    echo "Zenity not found. Installing..."
+    install_package zenity || {
+        echo "Failed to install zenity."
+        exit 1
+    }
+fi
+
+# === Install Cloudflare warp-cli if missing ===
+if ! command_exists warp-cli; then
+    zenity --question \
+        --title="Cloudflare WARP Not Found" \
+        --text="Cloudflare WARP (warp-cli) is not installed.\n\nWould you like to install it now?" \
+        --ok-label="Install" --cancel-label="Cancel"
+
+    if [ $? -eq 0 ]; then
+        if command_exists apt; then
+            curl https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+            sudo apt update && sudo apt install -y cloudflare-warp
+        elif command_exists dnf; then
+            sudo dnf config-manager --add-repo https://pkg.cloudflareclient.com/cloudflare-client.repo
+            sudo rpm --import https://pkg.cloudflareclient.com/pubkey.gpg
+            sudo dnf install -y cloudflare-warp
+        elif command_exists pacman; then
+            zenity --info --text="Please install WARP manually using the AUR or an unofficial package."
+            exit 1
+        elif command_exists zypper; then
+            zenity --info --text="Please install WARP manually — no official support yet for openSUSE."
+            exit 1
+        else
+            zenity --error --text="Unsupported package manager. Cannot auto-install WARP."
+            exit 1
+        fi
+        zenity --info --text="Cloudflare WARP installed. Please restart this script."
+        exit 0
+    else
+        zenity --error --text="Cannot continue without warp-cli. Exiting."
+        exit 1
+    fi
+fi
+
+# === Get current WARP status ===
+STATUS=$(warp-cli status 2>/dev/null)
+
+# === GUI logic to toggle WARP ===
+if echo "$STATUS" | grep -q "Status update: Connected"; then
+    zenity --question \
+        --title="WARP Status" \
+        --text="✅ WARP is currently ON.\n\nDo you want to turn it OFF?" \
+        --ok-label="Turn OFF" --cancel-label="Cancel"
+    if [ $? -eq 0 ]; then
+        warp-cli disconnect
+        zenity --info --text="WARP has been turned OFF."
+    fi
+elif echo "$STATUS" | grep -q "Status update: Disconnected" && echo "$STATUS" | grep -q "Reason: Settings Changed"; then
+    zenity --question \
+        --title="WARP Status" \
+        --text="❌ WARP is currently OFF.\n\nDo you want to turn it ON?" \
+        --ok-label="Turn ON" --cancel-label="Cancel"
+    if [ $? -eq 0 ]; then
+        warp-cli connect
+        zenity --info --text="WARP has been turned ON."
+    fi
+else
+    zenity --warning --text="⚠️ WARP is in an unknown state:\n\n$STATUS"
+fi
+
