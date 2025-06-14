@@ -79,6 +79,15 @@ if echo "$STATUS" | grep -q "Status update: Connected"; then
         warp-cli disconnect
         zenity --info --text="WARP has been turned OFF."
     fi
+elif echo "$STATUS" | grep -q "Status update: Disconnected" && echo "$STATUS" | grep -q "Reason: Manual Disconnection"; then
+    zenity --question \
+        --title="WARP Status" \
+        --text="❌ WARP is currently OFF.\n\nDo you want to turn it ON?" \
+        --ok-label="Turn ON" --cancel-label="Cancel"
+    if [ $? -eq 0 ]; then
+        warp-cli connect
+        zenity --info --text="WARP has been turned ON."
+    fi
 elif echo "$STATUS" | grep -q "Status update: Disconnected" && echo "$STATUS" | grep -q "Reason: Settings Changed"; then
     zenity --question \
         --title="WARP Status" \
@@ -91,4 +100,3 @@ elif echo "$STATUS" | grep -q "Status update: Disconnected" && echo "$STATUS" | 
 else
     zenity --warning --text="⚠️ WARP is in an unknown state:\n\n$STATUS"
 fi
-
